@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Kopumi",
-    platforms: [.macOS("26.0")],
-    targets: [.executableTarget(name: "Kopumi")]
+  name: "Kopumi",
+  platforms: [.macOS("26.0")],
+  targets: [.executableTarget(name: "Kopumi")]
 )
