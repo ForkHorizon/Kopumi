@@ -70,7 +70,10 @@ struct SearchQuery: Equatable {
     }
 }
 
-struct DBError: Error { let message: String }
+struct DBError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
 
 func nowMs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 
