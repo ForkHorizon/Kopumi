@@ -20,19 +20,17 @@ final class Watcher {
     let store: Store
     var onChange: () -> Void = {}
     private var lastCount = NSPasteboard.general.changeCount
-    private var timers: [Timer] = []
 
     init(store: Store) { self.store = store }
 
     func start() {
-        timers = [
-            Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.tick() }
-            },
-            Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { try? self?.store.prune(maxItems: Self.maxItems) }
-            },
-        ]
+        // The run loop retains scheduled timers, so they need no stored reference.
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tick() }
+        }
+        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { try? self?.store.prune(maxItems: Self.maxItems) }
+        }
     }
 
     private func tick() {
