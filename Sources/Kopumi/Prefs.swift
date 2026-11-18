@@ -9,7 +9,7 @@ enum Prefs {
   static let pausedUntilKey = "pausedUntil"  // seconds since 1970; 0 = capturing
 
   static var maxItems: Int { int(maxItemsKey, 500) }
-  static var holdDelay: Duration { .milliseconds(int(holdDelayKey, 300)) }
+  static var holdDelaySeconds: Double { Double(int(holdDelayKey, 300)) / 1000 }
   static var secretTTL: Int64 { Int64(int(secretMinutesKey, 10)) * 60_000 }
 
   static var ignoredApps: [String] {
