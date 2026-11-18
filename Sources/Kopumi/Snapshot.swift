@@ -33,23 +33,26 @@ func snapshotPanel(to dir: String) throws {
   }
   let model = PanelModel(store: store, embedder: Embedder())
   model.reset()
-  try render(model, "\(dir)/panel-light.png", .aqua)
-  try render(model, "\(dir)/panel-dark.png", .darkAqua)
+  try render(PanelView(model: model), "\(dir)/panel-light.png", .aqua)
+  try render(PanelView(model: model), "\(dir)/panel-dark.png", .darkAqua)
   model.selection = model.clips.firstIndex { $0.kind == .text } ?? 0  // text clips have AI actions
   model.toggleActions()
   model.move(1)
-  try render(model, "\(dir)/panel-actions-light.png", .aqua)
-  try render(model, "\(dir)/panel-actions-dark.png", .darkAqua)
+  try render(PanelView(model: model), "\(dir)/panel-actions-light.png", .aqua)
+  try render(PanelView(model: model), "\(dir)/panel-actions-dark.png", .darkAqua)
+  try render(SettingsView(), "\(dir)/settings-light.png", .aqua)
+  try render(SettingsView(), "\(dir)/settings-dark.png", .darkAqua)
+  try render(OnboardingView(), "\(dir)/onboarding-light.png", .aqua)
   if let i = model.actions.firstIndex(where: { $0.id == "cloud.summarize" }) {
     model.runAction(i)  // first use of a cloud action → asks before sending
-    try render(model, "\(dir)/panel-consent-light.png", .aqua)
+    try render(PanelView(model: model), "\(dir)/panel-consent-light.png", .aqua)
   }
 }
 
 @MainActor
-private func render(_ model: PanelModel, _ file: String, _ appearance: NSAppearance.Name) throws {
-  let view = NSHostingView(rootView: PanelView(model: model))
-  view.frame = NSRect(x: 0, y: 0, width: 760, height: 480)
+private func render(_ root: some View, _ file: String, _ appearance: NSAppearance.Name) throws {
+  let view = NSHostingView(rootView: root)
+  view.frame = NSRect(origin: .zero, size: view.fittingSize)
   let window = NSWindow(
     contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
   window.appearance = NSAppearance(named: appearance)
@@ -60,4 +63,46 @@ private func render(_ model: PanelModel, _ file: String, _ appearance: NSAppeara
   view.cacheDisplay(in: view.bounds, to: rep)
   try rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: file))
   print("wrote", file)
+}
+
+/// `Kopumi --icon <file.png>`: the 1024 px app icon master (run.sh turns it into AppIcon.icns).
+@MainActor
+func renderIcon(to file: String) throws {
+  let renderer = ImageRenderer(content: IconView().frame(width: 1024, height: 1024))
+  guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+    let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+  else { throw CloudError(message: "icon render failed") }
+  try png.write(to: URL(fileURLWithPath: file))
+  print("wrote", file)
+}
+
+/// Dark tile; a clip stacked on another, with one solid line (the panel's inverted selection).
+private struct IconView: View {
+  private let ink = Color(white: 0.08)
+  private let paper = Color(white: 0.95)
+
+  var body: some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: 185, style: .continuous).fill(ink)
+        .frame(width: 824, height: 824)
+      card.opacity(0.35).offset(x: -46, y: -46)
+      card.background(ink).offset(x: 46, y: 46)
+        .overlay(lines.offset(x: 46, y: 46))
+    }
+  }
+
+  private var card: some View {
+    RoundedRectangle(cornerRadius: 22, style: .continuous)
+      .strokeBorder(paper, lineWidth: 22)
+      .frame(width: 360, height: 440)
+  }
+
+  private var lines: some View {
+    VStack(alignment: .leading, spacing: 46) {
+      Capsule().fill(paper).frame(width: 220, height: 22)
+      RoundedRectangle(cornerRadius: 6).fill(paper).frame(width: 236, height: 56)  // the selection
+      Capsule().fill(paper).frame(width: 170, height: 22)
+    }
+    .frame(width: 236, alignment: .leading)
+  }
 }

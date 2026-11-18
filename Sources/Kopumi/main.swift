@@ -23,6 +23,15 @@ if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), i + 1 < CommandLi
     exit(1)
   }
 }
+if let i = CommandLine.arguments.firstIndex(of: "--icon"), i + 1 < CommandLine.arguments.count {
+  do {
+    try renderIcon(to: CommandLine.arguments[i + 1])
+    exit(0)
+  } catch {
+    print("icon failed:", error)
+    exit(1)
+  }
+}
 if CommandLine.arguments.contains("--check-ai") {  // real on-device models; no UI
   Task {
     await runAIChecks()
@@ -53,6 +62,7 @@ do {
 final class MenuController: NSObject, NSMenuDelegate {
   let menu = NSMenu()
   let store: Store
+  var onPauseChange: () -> Void = {}
 
   init(store: Store) {
     self.store = store
@@ -68,25 +78,35 @@ final class MenuController: NSObject, NSMenuDelegate {
         false
     }
     for (i, c) in clips.enumerated() {
-      let item = NSMenuItem(
-        title: c.label, action: #selector(pasteClip(_:)),
-        keyEquivalent: i < 9 ? "\(i + 1)" : "")
-      item.target = self
+      let item = add(c.label, #selector(pasteClip(_:)), key: i < 9 ? "\(i + 1)" : "")
       item.representedObject = c.id
       item.image = NSImage(
-        systemSymbolName: c.sensitive ? "lock.fill" : c.kind.symbol,
+        systemSymbolName: c.sensitive ? "lock" : c.kind.symbol,
         accessibilityDescription: c.kind.rawValue)
       if !c.sensitive, let t = c.text { item.toolTip = String(t.prefix(500)) }
-      menu.addItem(item)
     }
     menu.addItem(.separator())
-    menu.addItem(cloudMenuItem())
-    let clear = NSMenuItem(
-      title: "Clear History", action: #selector(clearHistory), keyEquivalent: "")
-    clear.target = self
-    menu.addItem(clear)
+    if let until = Prefs.pausedUntil, Prefs.isPaused {
+      let note =
+        until == .distantFuture
+        ? "" : " (paused until \(until.formatted(date: .omitted, time: .shortened)))"
+      add("Resume Capture" + note, #selector(resume))
+    } else {
+      add("Pause for 1 Hour", #selector(pauseHour))
+      add("Pause Until Resumed", #selector(pauseIndefinitely))
+    }
+    add("Clear History", #selector(clearHistory))
+    menu.addItem(.separator())
+    add("Settings…", #selector(openSettings), key: ",")
     menu.addItem(
       withTitle: "Quit Kopumi", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+  }
+
+  @discardableResult
+  private func add(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
+    let item = menu.addItem(withTitle: title, action: action, keyEquivalent: key)
+    item.target = self
+    return item
   }
 
   @objc func pasteClip(_ sender: NSMenuItem) {
@@ -99,6 +119,15 @@ final class MenuController: NSObject, NSMenuDelegate {
   }
 
   @objc func clearHistory() { try? store.clearHistory() }
+  @objc func openSettings() { Windows.show("settings", title: "Kopumi Settings", SettingsView()) }
+  @objc func pauseHour() { setPause(Date().addingTimeInterval(3600)) }
+  @objc func pauseIndefinitely() { setPause(.distantFuture) }
+  @objc func resume() { setPause(nil) }
+
+  private func setPause(_ until: Date?) {
+    Prefs.pausedUntil = until
+    onPauseChange()
+  }
 }
 
 let menuController = MenuController(store: store)
@@ -106,21 +135,34 @@ let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variable
 statusItem.button?.image = NSImage(
   systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Kopumi")
 statusItem.menu = menuController.menu
-
-if !AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) {
-  print("Grant Accessibility in System Settings → Privacy & Security, then relaunch.")
+/// Dimmed icon = capture paused. Re-checked every 30 s so a 1-hour pause un-dims by itself.
+@MainActor func refreshStatusIcon() { statusItem.button?.appearsDisabled = Prefs.isPaused }
+menuController.onPauseChange = refreshStatusIcon
+refreshStatusIcon()
+Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+  MainActor.assumeIsolated { refreshStatusIcon() }
 }
-// History works without the tap; pasting from history and the Cmd+V panel need it.
+Windows.installEditMenu()
+
 let embedder = Embedder()
 let enricher = Enricher(store: store, embedder: embedder)
 let panelController = PanelController(store: store, embedder: embedder)
-KeyTap.onHold = { panelController.show() }
-if !KeyTap.start() { print("Event tap failed (no Accessibility permission?)") }
-
 let watcher = Watcher(store: store)
 watcher.onChange = { enricher.kick() }
 watcher.start()
 enricher.kick()  // backfill anything not enriched yet
+KeyTap.onHold = { panelController.show() }
+KeyTap.onDoubleCopy = { watcher.appendLatest() }
+
+// History works without the tap; the Cmd+V panel, pasting and double Cmd+C need it.
+// Without Accessibility access, explain why and keep retrying until it's granted.
+if !KeyTap.start() {
+  Windows.show("onboarding", title: "", chromeless: true, OnboardingView())
+  Task {
+    while !KeyTap.start() { try? await Task.sleep(for: .seconds(1.5)) }
+    Windows.close("onboarding")
+  }
+}
 
 NSApplication.shared.setActivationPolicy(.accessory)  // no Dock icon
 NSApplication.shared.run()

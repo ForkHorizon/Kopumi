@@ -7,8 +7,10 @@ swift build -c "$CONF"
 
 APP=.build/Kopumi.app
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp ".build/$CONF/Kopumi" "$APP/Contents/MacOS/"
+# Icon master: `.build/debug/Kopumi --icon icon.png`, then sips + iconutil into Resources/AppIcon.icns
+cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -16,6 +18,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleIdentifier</key><string>com.daliys.kopumi</string>
   <key>CFBundleName</key><string>Kopumi</string>
   <key>CFBundleExecutable</key><string>Kopumi</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1</string>
   <key>LSUIElement</key><true/>

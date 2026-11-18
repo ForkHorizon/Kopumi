@@ -1,5 +1,5 @@
 // Cloud actions: run the user's own AI CLI (Codex, Claude Code, …) on their subscription.
-import AppKit
+import Foundation
 
 struct CloudError: LocalizedError {
   let message: String
@@ -14,7 +14,7 @@ enum CloudAI {
   ]
   // ponytail: high-reasoning CLIs take 30 s+ even for tiny prompts; make this a setting if 5 min bites.
   static let timeout: Duration = .seconds(300)
-  private static let commandKey = "cloudCommand"
+  static let commandKey = "cloudCommand"
 
   /// Empty = cloud actions off.
   static var command: String {
@@ -99,76 +99,4 @@ enum CloudAI {
   // ponytail: blocks a pool thread per stream while the CLI runs; fine for one action at a time.
   @concurrent
   private static func readAll(_ h: FileHandle) async -> Data { (try? h.readToEnd()) ?? Data() }
-}
-
-/// Menu bar submenu: pick the CLI (or turn cloud actions off) and test it.
-extension MenuController {
-  func cloudMenuItem() -> NSMenuItem {
-    let sub = NSMenu()
-    let current = CloudAI.command
-    let isPreset = CloudAI.presets.contains { $0.command == current }
-    for p in CloudAI.presets {
-      sub.addItem(
-        item(p.name, #selector(chooseCloud(_:)), value: p.command, on: current == p.command))
-    }
-    sub.addItem(item("Custom Command…", #selector(customCloud), on: CloudAI.isEnabled && !isPreset))
-    sub.addItem(item("Off", #selector(chooseCloud(_:)), value: "", on: !CloudAI.isEnabled))
-    sub.addItem(.separator())
-    let test = item("Test Connection", #selector(testCloud))
-    test.isEnabled = CloudAI.isEnabled
-    sub.addItem(test)
-    let root = NSMenuItem(
-      title: "Cloud AI: " + (CloudAI.isEnabled ? CloudAI.name : "Off"), action: nil,
-      keyEquivalent: "")
-    root.submenu = sub
-    return root
-  }
-
-  private func item(_ title: String, _ action: Selector, value: String? = nil, on: Bool = false)
-    -> NSMenuItem
-  {
-    let i = NSMenuItem(title: title, action: action, keyEquivalent: "")
-    i.target = self
-    i.representedObject = value
-    i.state = on ? .on : .off
-    return i
-  }
-
-  @objc func chooseCloud(_ sender: NSMenuItem) {
-    CloudAI.command = sender.representedObject as? String ?? ""
-  }
-
-  @objc func customCloud() {
-    let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 420, height: 24))
-    field.stringValue = CloudAI.command
-    let alert = NSAlert()
-    alert.messageText = "Cloud AI command"
-    alert.informativeText =
-      "Runs in your login shell. Kopumi sends the prompt on stdin and pastes what it prints."
-    alert.accessoryView = field
-    alert.addButton(withTitle: "Save")
-    alert.addButton(withTitle: "Cancel")
-    NSApp.activate()
-    if alert.runModal() == .alertFirstButtonReturn { CloudAI.command = field.stringValue }
-  }
-
-  @objc func testCloud() {
-    let name = CloudAI.name
-    Task {
-      let start = ContinuousClock.now
-      let message: String
-      do {
-        let reply = try await CloudAI.run("Reply with only the word OK.")
-        message =
-          "\(name) replied “\(reply.prefix(80))” in \((ContinuousClock.now - start).formatted(.units(allowed: [.seconds])))."
-      } catch {
-        message = error.localizedDescription
-      }
-      let alert = NSAlert()
-      alert.messageText = "Cloud AI test"
-      alert.informativeText = message
-      NSApp.activate()
-      alert.runModal()
-    }
-  }
 }

@@ -5,7 +5,6 @@ import CryptoKit
 /// Polls the pasteboard and saves every new copy. Fast and dumb: no AI here.
 @MainActor
 final class Watcher {
-  static let maxItems = 500
   static let maxBlobBytes = 20_000_000
 
   /// nspasteboard.org conventions used by password managers.
@@ -30,29 +29,64 @@ final class Watcher {
       MainActor.assumeIsolated { self?.tick() }
     }
     Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-      MainActor.assumeIsolated { try? self?.store.prune(maxItems: Self.maxItems) }
+      MainActor.assumeIsolated { try? self?.store.prune(maxItems: Prefs.maxItems) }
     }
   }
 
   private func tick() {
     let pb = NSPasteboard.general
     guard pb.changeCount != lastCount else { return }
-    lastCount = pb.changeCount
-    guard pb.changeCount != Paster.lastWrite,  // our own paste-from-history
+    lastCount = pb.changeCount  // also while paused, so resuming doesn't grab an old copy
+    guard !Prefs.isPaused, pb.changeCount != Paster.lastWrite,  // our own paste-from-history
       let clip = Self.capture(
         pb, sourceApp: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
     else { return }
     do {
       try store.upsert(clip)
-      try store.prune(maxItems: Self.maxItems)
+      try store.prune(maxItems: Prefs.maxItems)
       onChange()
     } catch { print("store:", error) }
+  }
+
+  /// Double Cmd+C: append the text just copied to the clip before it, and put the result on the
+  /// pasteboard so the next paste gives both.
+  func appendLatest() {
+    Task {
+      try? await Task.sleep(for: .milliseconds(150))  // let the second copy land
+      tick()
+      guard let recent = try? store.recent(limit: 2), recent.count == 2,
+        let merged = Self.appended(recent[1], to: recent[0]), let text = merged.text
+      else { return }
+      do {
+        try store.upsert(merged)
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        Paster.lastWrite = pb.changeCount
+        lastCount = pb.changeCount
+        onChange()
+      } catch { print("append:", error) }
+    }
+  }
+
+  /// `previous` + newline + `new`; nil for secrets, images, files, or a repeat of the same text.
+  static func appended(_ previous: Clip, to new: Clip) -> NewClip? {
+    let nonText: Set<ClipKind> = [.image, .files]
+    guard !previous.sensitive, !new.sensitive, !nonText.contains(previous.kind),
+      !nonText.contains(new.kind), let a = previous.text, let b = new.text, a != b
+    else { return nil }
+    let text = a + "\n" + b
+    return NewClip(
+      kind: classify(text).kind, text: text, sourceApp: new.sourceApp,
+      contentHash: hash("text", Data(text.utf8)), derivedFrom: previous.id)
   }
 
   /// Pasteboard → NewClip, or nil if it must not be stored.
   static func capture(_ pb: NSPasteboard, sourceApp: String?) -> NewClip? {
     guard let types = pb.types, skipTypes.isDisjoint(with: types) else { return nil }
-    if let app = sourceApp, ignoredApps.contains(app) { return nil }
+    if let app = sourceApp, ignoredApps.contains(app) || Prefs.ignoredApps.contains(app) {
+      return nil
+    }
 
     if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
       as? [URL],

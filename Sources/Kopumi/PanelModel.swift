@@ -217,10 +217,5 @@ final class PanelModel: ObservableObject {
     return img
   }
 
-  func appName(_ bundle: String?) -> String? {
-    guard let bundle, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle)
-    else { return nil }
-    return FileManager.default.displayName(atPath: url.path).replacingOccurrences(
-      of: ".app", with: "")
-  }
+  func appName(_ bundle: String?) -> String? { appDisplayName(bundle) }
 }
