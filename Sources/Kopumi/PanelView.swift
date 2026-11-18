@@ -120,9 +120,10 @@ struct PanelView: View {
           LazyVStack(spacing: 2) {
             ForEach(Array(model.clips.enumerated()), id: \.element.id) { i, c in
               Row(
-                clip: c, index: i, selected: i == model.selection, outlined: model.focus == .actions
+                clip: c, index: i, selected: i == model.selection,
+                outlined: model.focus == .actions, hovered: model.hovered == c.id
               )
-              .id(i)
+              .hoverTracked(c.id, model)
               .onTapGesture(count: 2) { model.paste(i) }
               .onTapGesture {
                 model.selection = i
@@ -132,9 +133,32 @@ struct PanelView: View {
           }
         }
         .scrollIndicators(.never)
-        .onChange(of: model.selection) { proxy.scrollTo(model.selection) }
+        // Rows are identified by clip id only. An extra position-based .id(i) here made the
+        // lazy list keep stale "ghost" rows when the history changed between openings.
+        .onChange(of: model.selection) {
+          if let id = model.selected?.id { proxy.scrollTo(id) }
+        }
       }
     }
+  }
+}
+
+/// Selected = solid ink block; hovered = a faint tint, quieter than selection.
+func rowFill(inverted: Bool, hovered: Bool) -> Color {
+  inverted ? Theme.ink : hovered ? Theme.hairline : .clear
+}
+
+extension View {
+  /// Hover feedback for a list row: remembers it in the model and shows a pointing hand.
+  func hoverTracked(_ id: String, _ model: PanelModel) -> some View {
+    pointerStyle(.link)
+      .onHover { inside in
+        if inside {
+          model.hovered = id
+        } else if model.hovered == id {
+          model.hovered = nil
+        }
+      }
   }
 }
 
@@ -152,6 +176,7 @@ private struct Row: View {
   let index: Int
   let selected: Bool
   let outlined: Bool
+  let hovered: Bool
 
   var body: some View {
     let inverted = selected && !outlined
@@ -168,7 +193,7 @@ private struct Row: View {
     .font(.system(size: 13))
     .foregroundStyle(inverted ? Theme.surface : Theme.ink)
     .padding(.horizontal, 10).padding(.vertical, 7)
-    .background(inverted ? Theme.ink : .clear, in: .rect(cornerRadius: 2))
+    .background(rowFill(inverted: inverted, hovered: hovered), in: .rect(cornerRadius: 2))
     .overlay {
       if selected && outlined { RoundedRectangle(cornerRadius: 2).strokeBorder(Theme.ink) }
     }
@@ -196,8 +221,11 @@ private struct ActionList: View {
           .font(.system(size: 12))
           .foregroundStyle(on ? Theme.surface : Theme.ink)
           .padding(.horizontal, 10).padding(.vertical, 5)
-          .background(on ? Theme.ink : .clear, in: .rect(cornerRadius: 2))
+          .background(
+            rowFill(inverted: on, hovered: model.hovered == a.id), in: .rect(cornerRadius: 2)
+          )
           .contentShape(.rect)
+          .hoverTracked(a.id, model)
           .onTapGesture { model.runAction(i) }
         }
       }
