@@ -59,7 +59,9 @@ struct PanelView: View {
 
   private var hints: some View {
     let pairs: [(String, String)] =
-      if model.result != nil {
+      if model.consent != nil {
+        [("↩", "Send"), ("esc", "Cancel")]
+      } else if model.result != nil {
         [("↩", "Paste result"), ("⌥↩", "Plain text"), ("esc", "Back")]
       } else if model.running != nil { [("esc", "Cancel")] } else if model.focus == .actions {
         [("↑↓", "Choose"), ("↩", "Run"), ("⇥", "Clips")]
@@ -81,7 +83,15 @@ struct PanelView: View {
   }
 
   @ViewBuilder private var detail: some View {
-    if let title = model.running {
+    if let c = model.consent {
+      section("Send to \(CloudAI.name)?") {
+        Text(
+          "“\(c.action.title)” sends this clip's text to \(CloudAI.name), using your own "
+            + "subscription. It leaves this Mac. Kopumi asks once per action."
+        )
+        .lineSpacing(3)
+      }
+    } else if let title = model.running {
       section("Working") {
         HStack(spacing: 8) {
           ProgressView().controlSize(.small)
@@ -178,8 +188,8 @@ private struct ActionList: View {
             Image(systemName: a.symbol).fontWeight(.light).frame(width: 16)
             Text(a.title).fontWeight(on ? .semibold : .regular)
             Spacer()
-            if case .onDevice = a.engine {
-              Text("AI").font(.system(size: 9, weight: .medium))
+            if let badge = a.badge {
+              Text(badge).font(.system(size: 9, weight: .medium))
                 .foregroundStyle(on ? Theme.surface : Theme.muted)
             }
           }

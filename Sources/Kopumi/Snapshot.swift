@@ -40,6 +40,10 @@ func snapshotPanel(to dir: String) throws {
   model.move(1)
   try render(model, "\(dir)/panel-actions-light.png", .aqua)
   try render(model, "\(dir)/panel-actions-dark.png", .darkAqua)
+  if let i = model.actions.firstIndex(where: { $0.id == "cloud.summarize" }) {
+    model.runAction(i)  // first use of a cloud action → asks before sending
+    try render(model, "\(dir)/panel-consent-light.png", .aqua)
+  }
 }
 
 @MainActor

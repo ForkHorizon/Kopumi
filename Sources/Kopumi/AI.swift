@@ -46,7 +46,7 @@ enum OnDeviceAI {
     if let e = error as? LanguageModelSession.GenerationError {
       switch e {
       case .exceededContextWindowSize:
-        return "Too long for the on-device model. Cloud actions arrive in M4."
+        return "Too long for the on-device model. Turn on a cloud CLI in the Kopumi menu."
       case .guardrailViolation: return "Apple's on-device model declined this text."
       default: break
       }
@@ -60,12 +60,22 @@ struct ClipAction: Identifiable {
   enum Engine {
     case local(@Sendable (String) -> String?)  // instant, deterministic
     case onDevice(String)  // prompt for the on-device model
+    case cloud(String)  // task for the user's AI CLI (heavier, slower, leaves the Mac)
   }
   let id: String
   let title: String
   let symbol: String
   let kinds: Set<ClipKind>
   let engine: Engine
+
+  /// Where it runs, shown next to the action: nothing for instant local transforms.
+  var badge: String? {
+    switch engine {
+    case .local: nil
+    case .onDevice: "AI"
+    case .cloud: CloudAI.name.uppercased()
+    }
+  }
 
   static let all: [ClipAction] = [
     .init(
@@ -110,9 +120,42 @@ struct ClipAction: Identifiable {
         "Write Swift Codable structs that decode this JSON. Output only Swift code.")),
   ]
 
+  static let cloud: [ClipAction] = [
+    .init(
+      id: "cloud.translate", title: "Translate", symbol: "character.bubble",
+      kinds: [.text, .table],
+      engine: .cloud(
+        "Translate the text. If it is in \(preferredLanguage), translate it to English; "
+          + "otherwise translate it to \(preferredLanguage). Keep formatting.")),
+    .init(
+      id: "cloud.summarize", title: "Summarize", symbol: "text.append", kinds: [.text, .table],
+      engine: .cloud("Summarize the key points as a short Markdown list.")),
+    .init(
+      id: "cloud.reply", title: "Draft a reply", symbol: "arrowshape.turn.up.left",
+      kinds: [.text, .email],
+      engine: .cloud("Write a short, friendly reply to this message, in its language.")),
+    .init(
+      id: "cloud.explain", title: "Explain code", symbol: "questionmark.circle",
+      kinds: [.code, .json],
+      engine: .cloud("Explain what this code does, concisely, as Markdown.")),
+  ]
+
+  /// The user's first preferred language, in English ("Russian", "German", …).
+  static let preferredLanguage: String = {
+    let code = Locale.preferredLanguages.first.map {
+      Locale(identifier: $0).language.languageCode?.identifier
+    }
+    return code.flatMap { $0 }.flatMap {
+      Locale(identifier: "en").localizedString(forLanguageCode: $0)
+    }
+      ?? "English"
+  }()
+
+  /// Secrets never get actions, so their text can't reach a model or a CLI.
   static func available(for clip: Clip) -> [ClipAction] {
     guard !clip.sensitive, clip.text != nil else { return [] }
-    return all.filter { $0.kinds.contains(clip.kind) }
+    let pool = CloudAI.isEnabled ? all + cloud : all
+    return pool.filter { $0.kinds.contains(clip.kind) }
   }
 }
 

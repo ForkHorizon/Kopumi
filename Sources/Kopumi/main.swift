@@ -2,13 +2,17 @@
 import AppKit
 
 if CommandLine.arguments.contains("--check") {
-  do {
-    try runChecks()
-    exit(0)
-  } catch {
-    print("check failed:", error)
-    exit(1)
+  Task {
+    do {
+      try runChecks()
+      try await checkCloud()
+      exit(0)
+    } catch {
+      print("check failed:", error)
+      exit(1)
+    }
   }
+  dispatchMain()
 }
 if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), i + 1 < CommandLine.arguments.count {
   do {
@@ -76,6 +80,7 @@ final class MenuController: NSObject, NSMenuDelegate {
       menu.addItem(item)
     }
     menu.addItem(.separator())
+    menu.addItem(cloudMenuItem())
     let clear = NSMenuItem(
       title: "Clear History", action: #selector(clearHistory), keyEquivalent: "")
     clear.target = self
