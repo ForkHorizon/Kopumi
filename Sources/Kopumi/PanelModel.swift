@@ -11,6 +11,8 @@ final class PanelModel: ObservableObject {
   @Published private(set) var shown = 0  // bumps on every show → refocus search field
   @Published var focus = Focus.clips
   @Published var actionSelection = 0
+  /// Id of the clip or action under the mouse (hover feedback only; clicking selects).
+  @Published var hovered: String?
   @Published private(set) var running: String?  // title of the action in flight
   @Published private(set) var result: String?
   @Published private(set) var error: String?
@@ -33,6 +35,7 @@ final class PanelModel: ObservableObject {
   var actions: [ClipAction] { selected.map(ClipAction.available) ?? [] }
 
   func reset() {
+    hovered = nil
     query = ""
     refresh()
     shown += 1

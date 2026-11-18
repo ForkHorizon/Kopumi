@@ -51,12 +51,25 @@ func snapshotPanel(to dir: String) throws {
 
 @MainActor
 private func render(_ root: some View, _ file: String, _ appearance: NSAppearance.Name) throws {
+  try capture(host(root, appearance), file)
+}
+
+/// An offscreen window that stays alive, so a view can be captured again after state changes.
+@MainActor
+private func host(_ root: some View, _ appearance: NSAppearance.Name) -> NSWindow {
   let view = NSHostingView(rootView: root)
   view.frame = NSRect(origin: .zero, size: view.fittingSize)
   let window = NSWindow(
     contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
+  window.isReleasedWhenClosed = false
   window.appearance = NSAppearance(named: appearance)
   window.contentView = view
+  return window
+}
+
+@MainActor
+private func capture(_ window: NSWindow, _ file: String) throws {
+  guard let view = window.contentView else { return }
   view.layoutSubtreeIfNeeded()
   RunLoop.main.run(until: Date().addingTimeInterval(0.4))  // let SwiftUI lay out and draw
   guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
@@ -105,4 +118,32 @@ private struct IconView: View {
     }
     .frame(width: 236, alignment: .leading)
   }
+}
+
+/// The real panel keeps one view alive while history changes between openings. Render that:
+/// open with one clip, copy two more, reopen, move the selection. Each row must appear once.
+@MainActor
+func snapshotLivePanel(to dir: String) throws {
+  let path = NSTemporaryDirectory() + "kopumi-live-\(UUID()).sqlite"
+  defer { try? FileManager.default.removeItem(atPath: path) }
+  let store = try Store(path: path, deviceId: "live")
+  let model = PanelModel(store: store, embedder: Embedder())
+  func copy(_ text: String, _ now: Int64) throws {
+    try store.upsert(NewClip(kind: .text, text: text, contentHash: text), now: now)
+  }
+  try copy("first clip", 1)
+  model.reset()
+  let window = host(PanelView(model: model), .darkAqua)
+  try capture(window, "\(dir)/live-1-open.png")
+  try copy("second clip", 2)
+  try copy("third clip", 3)
+  model.reset()  // reopen, as PanelController.show() does
+  try capture(window, "\(dir)/live-2-reopen.png")
+  model.move(1)
+  try capture(window, "\(dir)/live-3-moved.png")
+  model.hovered = model.clips.last?.id  // mouse over the last row
+  try capture(window, "\(dir)/live-4-hover.png")
+  model.toggleActions()
+  model.hovered = model.actions.dropFirst(2).first?.id  // mouse over the third action
+  try capture(window, "\(dir)/live-5-hover-actions.png")
 }
