@@ -10,6 +10,15 @@ if CommandLine.arguments.contains("--check") {
     exit(1)
   }
 }
+if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), i + 1 < CommandLine.arguments.count {
+  do {
+    try snapshotPanel(to: CommandLine.arguments[i + 1])
+    exit(0)
+  } catch {
+    print("snapshot failed:", error)
+    exit(1)
+  }
+}
 if CommandLine.arguments.contains("--check-ai") {  // real on-device models; no UI
   Task {
     await runAIChecks()

@@ -5,7 +5,7 @@ import AppKit
 final class PanelModel: ObservableObject {
   enum Focus { case clips, actions }
 
-  @Published var query = "" { didSet { refresh() } }
+  @Published var query = "" { didSet { if query != oldValue { refresh() } } }
   @Published private(set) var clips: [Clip] = []
   @Published var selection = 0 { didSet { if selection != oldValue { resetAction() } } }
   @Published private(set) var shown = 0  // bumps on every show → refocus search field
