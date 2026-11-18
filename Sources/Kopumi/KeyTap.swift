@@ -47,12 +47,11 @@ struct HoldMachine {
 
 /// Global keyboard tap. Needs Accessibility permission.
 enum KeyTap {
-  /// Tag on our synthetic events so the tap lets them through untouched.
-  /// Virtual key code of V (kVK_ANSI_V).
+  /// Virtual key codes (kVK_ANSI_V, kVK_ANSI_C).
   static let vKeyCode: CGKeyCode = 9
+  static let cKeyCode: CGKeyCode = 8
+  /// Tag on our synthetic events so the tap lets them through untouched.
   static let marker: Int64 = 0x4B4F_5055  // "KOPU"
-  // ponytail: constant; becomes a setting in M5.
-  static let holdDelay = Duration.milliseconds(300)
   /// Apps that read Cmd+V themselves (VMs, remote desktops) — never intercept there.
   static let passthroughApps: Set<String> = [
     "com.parallels.desktop.console", "com.vmware.fusion", "com.utmapp.UTM",
@@ -62,6 +61,8 @@ enum KeyTap {
   @MainActor static var machine = HoldMachine()
   @MainActor static var timer: Task<Void, Never>?
   @MainActor static var onHold: () -> Void = {}
+  @MainActor static var onDoubleCopy: () -> Void = {}
+  @MainActor static var copyTap = DoubleTap()
 
   static func start() -> Bool {
     let mask = [CGEventType.keyDown, .keyUp, .flagsChanged].reduce(CGEventMask(0)) {
@@ -82,7 +83,11 @@ enum KeyTap {
             let e = KeyTap.event(type, event)
           else { return pass }
           // The tap runs on the main run loop.
-          let swallow = MainActor.assumeIsolated { KeyTap.feed(e) }
+          let isCopy = type == .keyDown && KeyTap.isPlainCmdC(event)
+          let swallow = MainActor.assumeIsolated {
+            if isCopy { KeyTap.noteCopy() }  // observe only: the copy itself always goes through
+            return KeyTap.feed(e)
+          }
           return swallow ? nil : pass
         },
         userInfo: nil
@@ -94,13 +99,26 @@ enum KeyTap {
     return true
   }
 
+  private static func modifiers(_ e: CGEvent) -> CGEventFlags {
+    e.flags.intersection([.maskCommand, .maskShift, .maskAlternate, .maskControl])
+  }
+
+  private static func isPlainCmdC(_ e: CGEvent) -> Bool {
+    e.getIntegerValueField(.keyboardEventKeycode) == Int64(cKeyCode)
+      && modifiers(e) == .maskCommand && e.getIntegerValueField(.keyboardEventAutorepeat) == 0
+  }
+
+  /// Double Cmd+C → append the selection to the previous clip.
+  @MainActor static func noteCopy() {
+    if copyTap.press(at: ProcessInfo.processInfo.systemUptime) { onDoubleCopy() }
+  }
+
   private static func event(_ type: CGEventType, _ event: CGEvent) -> HoldMachine.Event? {
     let isV = event.getIntegerValueField(.keyboardEventKeycode) == Int64(vKeyCode)
     switch type {
     case .keyDown where isV:
-      let mods = event.flags.intersection([.maskCommand, .maskShift, .maskAlternate, .maskControl])
       return .vDown(
-        cmdOnly: mods == .maskCommand,
+        cmdOnly: modifiers(event) == .maskCommand,
         isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
     case .keyUp where isV: return .vUp
     case .keyDown: return .otherKeyDown
@@ -123,7 +141,7 @@ enum KeyTap {
     case .startTimer:
       timer?.cancel()
       timer = Task {
-        try? await Task.sleep(for: holdDelay)
+        try? await Task.sleep(for: Prefs.holdDelay)
         if !Task.isCancelled { _ = feed(.timerFired) }
       }
     case .pasteNative: postCmdV()

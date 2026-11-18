@@ -5,7 +5,7 @@ import AppKit
 final class PanelModel: ObservableObject {
   enum Focus { case clips, actions }
 
-  @Published var query = "" { didSet { refresh() } }
+  @Published var query = "" { didSet { if query != oldValue { refresh() } } }
   @Published private(set) var clips: [Clip] = []
   @Published var selection = 0 { didSet { if selection != oldValue { resetAction() } } }
   @Published private(set) var shown = 0  // bumps on every show → refocus search field
@@ -14,6 +14,8 @@ final class PanelModel: ObservableObject {
   @Published private(set) var running: String?  // title of the action in flight
   @Published private(set) var result: String?
   @Published private(set) var error: String?
+  /// A cloud action waiting for "send this text to the CLI?" confirmation.
+  @Published private(set) var consent: (action: ClipAction, prompt: String)?
   var target: NSRunningApplication?
   var close: () -> Void = {}
   let store: Store
@@ -68,14 +70,16 @@ final class PanelModel: ObservableObject {
   }
 
   func toggleActions() {
-    guard result == nil, running == nil else { return }
+    guard result == nil, running == nil, consent == nil else { return }
     focus = focus == .clips && !actions.isEmpty ? .actions : .clips
     actionSelection = 0
   }
 
   /// ↩: paste the AI result, run the chosen action, or paste the clip.
   func enter(forcePlain: Bool) {
-    if result != nil {
+    if consent != nil {
+      confirmCloud()
+    } else if result != nil {
       pasteResult(forcePlain: forcePlain)
     } else if focus == .actions {
       runAction()
@@ -86,7 +90,7 @@ final class PanelModel: ObservableObject {
 
   /// Esc: step back one level. Returns false when there's nothing to step back from (→ close).
   func back() -> Bool {
-    if running != nil || result != nil || error != nil {
+    if running != nil || result != nil || error != nil || consent != nil {
       resetAction()
       return true
     }
@@ -123,25 +127,66 @@ final class PanelModel: ObservableObject {
       } else {
         error = "Couldn't apply “\(action.title)” to this clip."
       }
-    case .onDevice(let prompt):
-      if let why = OnDeviceAI.unavailableReason {
-        error = why
-        return
+    case .onDevice(let task):
+      // ponytail: ~4k-token window ≈ 6k chars; longer text goes to the cloud CLI when one is on.
+      if text.count > 6_000, CloudAI.isEnabled {
+        askCloud(action, CloudAI.prompt(task: task, text: text))
+      } else {
+        runOnDevice(action.title, task: task, text: text)
       }
-      running = action.title
-      actionTask = Task {
-        do {
-          let r = try await OnDeviceAI.respond(
-            instructions: OnDeviceAI.actionInstructions,
-            prompt: prompt + "\n\nText:\n" + text)
-          guard !Task.isCancelled else { return }
-          result = r
-        } catch {
-          guard !Task.isCancelled else { return }
-          self.error = OnDeviceAI.describe(error)
-        }
-        running = nil
+    case .cloud(let task):
+      askCloud(action, CloudAI.prompt(task: task, text: text))
+    }
+  }
+
+  private func runOnDevice(_ title: String, task: String, text: String) {
+    if let why = OnDeviceAI.unavailableReason {
+      error = why
+      return
+    }
+    start(title, describe: OnDeviceAI.describe) {
+      try await OnDeviceAI.respond(
+        instructions: OnDeviceAI.actionInstructions, prompt: task + "\n\nText:\n" + text)
+    }
+  }
+
+  private func askCloud(_ action: ClipAction, _ prompt: String) {
+    if CloudAI.hasConsent(action.id) {
+      runCloud(action.title, prompt)
+    } else {
+      consent = (action, prompt)
+    }
+  }
+
+  private func confirmCloud() {
+    guard let c = consent else { return }
+    consent = nil
+    CloudAI.grantConsent(c.action.id)
+    runCloud(c.action.title, c.prompt)
+  }
+
+  private func runCloud(_ title: String, _ prompt: String) {
+    start("\(title) in \(CloudAI.name)", describe: CloudAI.describe) {
+      try await CloudAI.run(prompt)
+    }
+  }
+
+  /// One cancellable action at a time; esc or a new selection cancels it (and kills a running CLI).
+  private func start(
+    _ label: String, describe: @escaping (Error) -> String,
+    _ work: @escaping @MainActor () async throws -> String
+  ) {
+    running = label
+    actionTask = Task {
+      do {
+        let r = try await work()
+        guard !Task.isCancelled else { return }
+        result = r
+      } catch {
+        guard !Task.isCancelled else { return }
+        self.error = describe(error)
       }
+      running = nil
     }
   }
 
@@ -162,6 +207,7 @@ final class PanelModel: ObservableObject {
     running = nil
     result = nil
     error = nil
+    consent = nil
   }
 
   func image(for clip: Clip) -> NSImage? {
@@ -171,10 +217,5 @@ final class PanelModel: ObservableObject {
     return img
   }
 
-  func appName(_ bundle: String?) -> String? {
-    guard let bundle, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle)
-    else { return nil }
-    return FileManager.default.displayName(atPath: url.path).replacingOccurrences(
-      of: ".app", with: "")
-  }
+  func appName(_ bundle: String?) -> String? { appDisplayName(bundle) }
 }

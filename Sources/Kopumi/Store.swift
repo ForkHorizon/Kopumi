@@ -68,7 +68,7 @@ extension Array where Element == Float {
 /// reads/writes come back here. Move to an actor if queries ever show up in a profile.
 @MainActor
 final class Store {
-  static let sensitiveTTL: Int64 = 10 * 60 * 1000
+  static var sensitiveTTL: Int64 { Prefs.secretTTL }
   private var db: OpaquePointer?
   private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
   let deviceId: String

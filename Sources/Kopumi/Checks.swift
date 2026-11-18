@@ -9,6 +9,7 @@ func runChecks() throws {
   checkPasteAndActions()
   checkSearchSyntax()
   checkCapture()
+  checkPrefsAndAppend()
   try checkStoreBasics()
   try checkStoreSearchAndEnrichment()
   print("checks passed")
@@ -264,4 +265,78 @@ private func checkFoundationModels() async {
   } catch {
     print("fix grammar failed:", OnDeviceAI.describe(error))
   }
+}
+
+/// Cloud runner plumbing with stand-in commands (no AI is called).
+@MainActor
+func checkCloud() async throws {
+  let echoed = try await CloudAI.run("héllo\nworld", command: "cat")
+  precondition(echoed == "héllo\nworld", "stdin → stdout: \(echoed)")
+  for (command, expect) in [("exit 3", "exit 3"), ("kopumi-no-such-cli-xyz", "Is it installed?")] {
+    do {
+      _ = try await CloudAI.run("x", command: command)
+      preconditionFailure("\(command) should fail")
+    } catch {
+      precondition(error.localizedDescription.contains(expect), "\(command): \(error)")
+    }
+  }
+  let started = ContinuousClock.now
+  let slow = Task { try await CloudAI.run("x", command: "sleep 30") }
+  try await Task.sleep(for: .milliseconds(300))
+  slow.cancel()
+  let outcome = await slow.result
+  precondition(ContinuousClock.now - started < .seconds(5), "cancel must kill the CLI")
+  if case .success = outcome { preconditionFailure("cancelled run must throw") }
+
+  let saved = CloudAI.command
+  defer { CloudAI.command = saved }
+  let text = Clip(
+    id: "c", kind: .text, text: "hi", title: nil, sourceApp: nil, sensitive: false, lastUsedAt: 0)
+  CloudAI.command = "cat"
+  precondition(ClipAction.available(for: text).contains { $0.id == "cloud.summarize" })
+  precondition(ClipAction.available(for: text).first { $0.id == "cloud.reply" }?.badge == "CAT")
+  CloudAI.command = ""
+  precondition(!ClipAction.available(for: text).contains { $0.id.hasPrefix("cloud.") }, "off")
+  let secret = Clip(
+    id: "s", kind: .text, text: "sk-x", title: nil, sourceApp: nil, sensitive: true, lastUsedAt: 0)
+  CloudAI.command = "cat"
+  precondition(ClipAction.available(for: secret).isEmpty, "secrets never get actions")
+  precondition(CloudAI.prompt(task: "T1", text: "X2").contains("Task: T1\n\nText:\nX2"))
+  print("cloud checks passed")
+}
+
+/// Double Cmd+C timing and merge rules, pause, user ignore list. Restores any prefs it touches.
+@MainActor
+private func checkPrefsAndAppend() {
+  var tap = DoubleTap()
+  let presses = [0, 0.3, 0.5, 1.5, 1.8].map { tap.press(at: $0) }
+  precondition(presses == [false, true, false, false, true], "double tap \(presses)")
+
+  func clip(_ text: String?, _ kind: ClipKind = .text, secret: Bool = false) -> Clip {
+    Clip(
+      id: text ?? "img", kind: kind, text: text, title: nil, sourceApp: "app", sensitive: secret,
+      lastUsedAt: 0)
+  }
+  let merged = Watcher.appended(clip("first"), to: clip("second"))
+  precondition(merged?.text == "first\nsecond" && merged?.derivedFrom == "first", "append")
+  precondition(Watcher.appended(clip("same"), to: clip("same")) == nil, "no self-append")
+  precondition(Watcher.appended(clip("a", secret: true), to: clip("b")) == nil, "no secrets")
+  precondition(Watcher.appended(clip(nil, .image), to: clip("b")) == nil, "no images")
+
+  let (savedPause, savedApps) = (Prefs.pausedUntil, Prefs.ignoredApps)
+  defer { (Prefs.pausedUntil, Prefs.ignoredApps) = (savedPause, savedApps) }
+  Prefs.pausedUntil = Date().addingTimeInterval(60)
+  precondition(Prefs.isPaused, "paused")
+  Prefs.pausedUntil = Date().addingTimeInterval(-1)
+  precondition(!Prefs.isPaused, "pause expired")
+  Prefs.pausedUntil = nil
+  precondition(!Prefs.isPaused, "resumed")
+
+  Prefs.ignoredApps = ["com.example.diary"]
+  let pb = NSPasteboard(name: .init("kopumi-check-prefs"))
+  defer { pb.releaseGlobally() }
+  pb.clearContents()
+  pb.setString("dear diary", forType: .string)
+  precondition(Watcher.capture(pb, sourceApp: "com.example.diary") == nil, "user-ignored app")
+  precondition(Watcher.capture(pb, sourceApp: "com.example.notes") != nil, "other apps captured")
 }
