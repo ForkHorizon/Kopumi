@@ -62,6 +62,11 @@ enum CloudAI {
     p.currentDirectoryURL = dir
     let (input, output, errors) = (Pipe(), Pipe(), Pipe())
     (p.standardInput, p.standardOutput, p.standardError) = (input, output, errors)
+    // Exit is awaited, not waitUntilExit(): that blocks on run-loop notifications, which pool
+    // threads don't service, and it could hang forever after a cancel. Set before run() so an
+    // instant exit is buffered, never missed.
+    let (exited, exit) = AsyncStream<Void>.makeStream()
+    p.terminationHandler = { _ in exit.finish() }
     try p.run()
     let killer = Task {
       try await Task.sleep(for: timeout)
@@ -77,7 +82,7 @@ enum CloudAI {
     } onCancel: {
       p.terminate()
     }
-    p.waitUntilExit()
+    for await _ in exited {}  // ends when the process has exited
     try Task.checkCancellation()
     return try result(p, out, err)
   }
