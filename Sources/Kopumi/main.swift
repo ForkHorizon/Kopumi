@@ -73,6 +73,14 @@ final class MenuController: NSObject, NSMenuDelegate {
 
   func menuNeedsUpdate(_ menu: NSMenu) {
     menu.removeAllItems()
+    if KeyTap.gaveUp.load(ordering: .relaxed) {
+      let note = menu.addItem(
+        withTitle:
+          "⌘V panel is off: macOS kept timing out the keyboard hook. Quit and reopen Kopumi.",
+        action: nil, keyEquivalent: "")
+      note.isEnabled = false
+      menu.addItem(.separator())
+    }
     let clips = (try? store.recent(limit: 10)) ?? []
     if clips.isEmpty {
       menu.addItem(withTitle: "Nothing copied yet", action: nil, keyEquivalent: "").isEnabled =
