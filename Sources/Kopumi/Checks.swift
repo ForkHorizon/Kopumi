@@ -11,6 +11,7 @@ func runChecks() throws {
   checkCapture()
   checkPrefsAndAppend()
   checkKeyTapOffMain()
+  checkAppearance()
   try checkStoreBasics()
   try checkStoreSearchAndEnrichment()
   print("checks passed")
@@ -361,4 +362,23 @@ private func checkKeyTapOffMain() {
   }.start()
   done.wait()
   precondition(passed == 2, "tap callback must pass plain keys through off the main thread")
+}
+
+/// Each Appearance choice sets the app-wide appearance; "system" clears it. Restores the pref.
+@MainActor
+private func checkAppearance() {
+  _ = NSApplication.shared
+  let saved = UserDefaults.standard.string(forKey: Prefs.appearanceKey)
+  defer {
+    UserDefaults.standard.set(saved, forKey: Prefs.appearanceKey)
+    Windows.applyAppearance()
+  }
+  for (choice, want) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+    UserDefaults.standard.set(choice, forKey: Prefs.appearanceKey)
+    Windows.applyAppearance()
+    precondition(NSApp.appearance?.name == want, "appearance \(choice)")
+  }
+  UserDefaults.standard.set("system", forKey: Prefs.appearanceKey)
+  Windows.applyAppearance()
+  precondition(NSApp.appearance == nil, "system follows macOS")
 }

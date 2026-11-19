@@ -27,6 +27,17 @@ enum Windows {
 
   static func close(_ id: String) { open[id]?.close() }
 
+  /// Light / dark for all of Kopumi's windows; "system" (nil) follows macOS.
+  static func applyAppearance() {
+    let name: NSAppearance.Name? =
+      switch UserDefaults.standard.string(forKey: Prefs.appearanceKey) {
+      case "light": .aqua
+      case "dark": .darkAqua
+      default: nil
+      }
+    NSApp.appearance = name.flatMap(NSAppearance.init(named:))
+  }
+
   /// Accessory apps have no menu bar, but text fields need an Edit menu for ⌘C / ⌘V / ⌘A / ⌘Z.
   static func installEditMenu() {
     let edit = NSMenu(title: "Edit")
@@ -97,6 +108,7 @@ final class SettingsModel: ObservableObject {
 
 struct SettingsView: View {
   @AppStorage(Prefs.maxItemsKey) private var maxItems = 500
+  @AppStorage(Prefs.appearanceKey) private var appearance = "system"
   @AppStorage(Prefs.holdDelayKey) private var holdDelay = 300
   @AppStorage(Prefs.secretMinutesKey) private var secretMinutes = 10
   @AppStorage(Prefs.ignoredAppsKey) private var ignoredApps = ""
@@ -108,6 +120,12 @@ struct SettingsView: View {
   var body: some View {
     Form {
       Section("General") {
+        Picker("Appearance", selection: $appearance) {
+          Text("System").tag("system")
+          Text("Light").tag("light")
+          Text("Dark").tag("dark")
+        }
+        .onChange(of: appearance) { Windows.applyAppearance() }
         Toggle("Open at login", isOn: Binding(get: { model.openAtLogin }, set: model.setLogin))
         if let loginNote = model.loginNote { note(loginNote) }
         Picker("Keep history", selection: $maxItems) {

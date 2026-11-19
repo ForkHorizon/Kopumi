@@ -7,6 +7,7 @@ enum Prefs {
   static let secretMinutesKey = "secretMinutes"
   static let ignoredAppsKey = "ignoredApps"  // bundle ids, one per line
   static let pausedUntilKey = "pausedUntil"  // seconds since 1970; 0 = capturing
+  static let appearanceKey = "appearance"  // "system", "light" or "dark"
 
   static var maxItems: Int { int(maxItemsKey, 500) }
   static var holdDelaySeconds: Double { Double(int(holdDelayKey, 300)) / 1000 }
