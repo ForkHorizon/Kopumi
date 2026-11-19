@@ -125,6 +125,7 @@ enum KeyTap {
   private static func quitWhenExecutableReplaced() {
     guard let path = Bundle.main.executablePath else { return }
     executableWatch = watchFileGone(path) {
+      executableWatch?.cancel()  // one-shot
       if let port { CGEvent.tapEnable(tap: port, enable: false) }
       log.fault("executable was deleted or replaced on disk; quitting so input stays responsive")
       DispatchQueue.main.async { NSApp.terminate(nil) }
