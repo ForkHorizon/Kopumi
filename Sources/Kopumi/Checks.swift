@@ -10,6 +10,7 @@ func runChecks() throws {
   checkSearchSyntax()
   checkCapture()
   checkPrefsAndAppend()
+  checkKeyTapOffMain()
   try checkStoreBasics()
   try checkStoreSearchAndEnrichment()
   print("checks passed")
@@ -339,4 +340,25 @@ private func checkPrefsAndAppend() {
   pb.setString("dear diary", forType: .string)
   precondition(Watcher.capture(pb, sourceApp: "com.example.diary") == nil, "user-ignored app")
   precondition(Watcher.capture(pb, sourceApp: "com.example.notes") != nil, "other apps captured")
+}
+
+/// Smoke check: the tap callback (handle → feed, double-Cmd+C detection) runs off the main thread.
+/// Calling it directly does not reproduce the isolation trap macOS's real event delivery hit, so
+/// the guard against that is structural: `KeyTap.callback` is declared outside any @MainActor code.
+/// Only harmless events: a plain "A" and Cmd+C (Cmd+V would post a real paste).
+private func checkKeyTapOffMain() {
+  let done = DispatchSemaphore(value: 0)
+  nonisolated(unsafe) var passed = 0
+  Thread {
+    for (key, flags) in [(CGKeyCode(0), CGEventFlags()), (KeyTap.cKeyCode, .maskCommand)] {
+      guard let e = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: true) else {
+        continue
+      }
+      e.flags = flags
+      if KeyTap.callback(OpaquePointer(bitPattern: 1)!, .keyDown, e, nil) != nil { passed += 1 }
+    }
+    done.signal()
+  }.start()
+  done.wait()
+  precondition(passed == 2, "tap callback must pass plain keys through off the main thread")
 }

@@ -85,7 +85,7 @@ enum KeyTap {
       let tap = CGEvent.tapCreate(
         tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
         eventsOfInterest: mask,
-        callback: { _, type, event, _ in KeyTap.handle(type, event) },
+        callback: callback,
         userInfo: nil)
     else { return false }
     port = tap
@@ -104,6 +104,10 @@ enum KeyTap {
     thread.start()
     return true
   }
+
+  /// The C callback macOS calls on the tap thread. Declared here, not inside `start()`: a closure
+  /// written in a @MainActor function is main-actor isolated, and Swift traps when it runs elsewhere.
+  static let callback: CGEventTapCallBack = { _, type, event, _ in KeyTap.handle(type, event) }
 
   /// Runs on the tap thread for every key event. Must answer fast and never wait on the main thread.
   private static func handle(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -180,7 +184,8 @@ enum KeyTap {
   /// Called when the panel closes, so a lost V key-up can never leave Cmd+V stuck.
   @MainActor static func reset() { onTapThread { machine.reset() } }
 
-  private static func onTapThread(_ work: @escaping () -> Void) {
+  /// `@Sendable` keeps the block nonisolated even when the caller is on the main actor.
+  private static func onTapThread(_ work: @escaping @Sendable () -> Void) {
     guard let loop else { return }
     CFRunLoopPerformBlock(loop, CFRunLoopMode.commonModes.rawValue, work)
     CFRunLoopWakeUp(loop)
