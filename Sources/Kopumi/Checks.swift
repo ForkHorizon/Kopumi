@@ -398,4 +398,14 @@ private func checkInputSafety() {
   var fuse = TapFuse(limit: 3, window: 60)
   let trips = [0, 10, 100, 110, 115].map { fuse.trip(at: $0) }
   precondition(trips == [false, false, false, false, true], "fuse \(trips)")
+
+  // A deleted executable (rebuild/update under the running app) must be noticed at once.
+  let file = NSTemporaryDirectory() + "kopumi-watch-\(getpid())"
+  FileManager.default.createFile(atPath: file, contents: nil)
+  let gone = DispatchSemaphore(value: 0)
+  let watch = KeyTap.watchFileGone(file) { gone.signal() }
+  precondition(watch != nil, "watch executable")
+  try? FileManager.default.removeItem(atPath: file)
+  precondition(gone.wait(timeout: .now() + 2) == .success, "deleted executable noticed")
+  watch?.cancel()
 }
