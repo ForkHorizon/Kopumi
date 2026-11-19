@@ -96,6 +96,7 @@ enum KeyTap {
         userInfo: nil)
     else { return false }
     port = tap
+    quitWhenExecutableReplaced()
     trackFrontmostApp()
     let thread = Thread {
       KeyTap.loop = CFRunLoopGetCurrent()
@@ -115,6 +116,35 @@ enum KeyTap {
     return true
   }
 
+  nonisolated(unsafe) private static var executableWatch: DispatchSourceFileSystemObject?
+
+  /// A rebuild or update deletes the app bundle under the running process. macOS then stops
+  /// trusting this process ("Sender is prohibited from synthesizing events") while its tap is
+  /// still installed, and every keystroke system-wide waits for the tap timeout. The stale
+  /// process is useless anyway, so the moment its executable goes away: tap off, quit.
+  private static func quitWhenExecutableReplaced() {
+    guard let path = Bundle.main.executablePath else { return }
+    executableWatch = watchFileGone(path) {
+      if let port { CGEvent.tapEnable(tap: port, enable: false) }
+      log.fault("executable was deleted or replaced on disk; quitting so input stays responsive")
+      DispatchQueue.main.async { NSApp.terminate(nil) }
+    }
+  }
+
+  /// Calls `handler` (off the main thread) when the file at `path` is deleted or replaced.
+  static func watchFileGone(_ path: String, handler: @escaping @Sendable () -> Void)
+    -> DispatchSourceFileSystemObject?
+  {
+    let fd = open(path, O_EVTONLY)
+    guard fd >= 0 else { return nil }
+    let source = DispatchSource.makeFileSystemObjectSource(
+      fileDescriptor: fd, eventMask: [.delete, .rename], queue: .global(qos: .userInteractive))
+    source.setEventHandler(handler: handler)
+    source.setCancelHandler { close(fd) }
+    source.resume()
+    return source
+  }
+
   /// The C callback macOS calls on the tap thread. Declared here, not inside `start()`: a closure
   /// written in a @MainActor function is main-actor isolated, and Swift traps when it runs elsewhere.
   static let callback: CGEventTapCallBack = { _, type, event, _ in KeyTap.handle(type, event) }
@@ -129,8 +159,13 @@ enum KeyTap {
       // ⌘V: otherwise the hold timer could open the panel unasked and keep swallowing V.
       machine.reset()
       if let holdTimer { CFRunLoopTimerInvalidate(holdTimer) }
-      if type == .tapDisabledByTimeout, fuse.trip(at: ProcessInfo.processInfo.systemUptime) {
+      // An untrusted process (permission revoked, bundle replaced) can never answer in time:
+      // re-enabling would only stall input again.
+      if type == .tapDisabledByTimeout,
+        !AXIsProcessTrusted() || fuse.trip(at: ProcessInfo.processInfo.systemUptime)
+      {
         gaveUp.store(true, ordering: .relaxed)
+        if let port { CGEvent.tapEnable(tap: port, enable: false) }
         log.fault("key tap kept timing out; leaving it off so system input stays responsive")
         return pass
       }
