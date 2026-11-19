@@ -11,6 +11,7 @@ func runChecks() throws {
   checkCapture()
   checkPrefsAndAppend()
   checkKeyTapOffMain()
+  checkInputSafety()
   try checkStoreBasics()
   try checkStoreSearchAndEnrichment()
   print("checks passed")
@@ -361,4 +362,20 @@ private func checkKeyTapOffMain() {
   }.start()
   done.wait()
   precondition(passed == 2, "tap callback must pass plain keys through off the main thread")
+}
+
+/// Synthetic pastes must never suppress the real keyboard/mouse, and the timeout fuse must trip
+/// only on repeated timeouts within its window.
+private func checkInputSafety() {
+  guard let source = KeyTap.pasteSource() else { preconditionFailure("paste event source") }
+  precondition(source.localEventsSuppressionInterval == 0, "no input suppression after a paste")
+  let permitted = source.getLocalEventsFilterDuringSuppressionState(
+    .eventSuppressionStateSuppressionInterval)
+  precondition(
+    permitted.contains([.permitLocalMouseEvents, .permitLocalKeyboardEvents]),
+    "real keyboard and mouse stay live during a synthetic paste")
+
+  var fuse = TapFuse(limit: 3, window: 60)
+  let trips = [0, 10, 100, 110, 115].map { fuse.trip(at: $0) }
+  precondition(trips == [false, false, false, false, true], "fuse \(trips)")
 }

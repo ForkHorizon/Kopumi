@@ -1,6 +1,7 @@
 // Global keyboard tap and the Cmd+V tap-vs-hold state machine.
 import AppKit
 import Synchronization
+import os
 
 /// Cmd+V: quick tap = native paste, hold = open the panel. Pure state machine so it can be checked.
 struct HoldMachine {
@@ -74,6 +75,12 @@ enum KeyTap {
   nonisolated(unsafe) private static var holdTimer: CFRunLoopTimer?
   /// Frontmost app, written on the main thread by a workspace notification, read on the tap thread.
   private static let frontmost = Mutex<String?>(nil)
+  nonisolated(unsafe) private static var fuse = TapFuse()
+  /// Set once macOS keeps timing the tap out: Kopumi stops intercepting so input stays native.
+  static let gaveUp = Atomic<Bool>(false)
+  /// Keeps App Nap from throttling the tap thread while Kopumi has no visible windows.
+  @MainActor private static var activity: NSObjectProtocol?
+  private static let log = Logger(subsystem: "com.daliys.kopumi", category: "keytap")
 
   /// Creates the tap and its thread. False without Accessibility access (call again later).
   @MainActor
@@ -102,6 +109,9 @@ enum KeyTap {
     thread.name = "Kopumi key tap"
     thread.qualityOfService = .userInteractive
     thread.start()
+    activity = ProcessInfo.processInfo.beginActivity(
+      options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
+      reason: "Global ⌘V key tap must answer every keystroke instantly")
     return true
   }
 
@@ -113,9 +123,19 @@ enum KeyTap {
   private static func handle(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
     let pass = Unmanaged.passUnretained(event)
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-      // Logged so a freeze leaves evidence; re-enabled so Kopumi keeps working.
-      print(
-        "⚠️ key tap disabled by macOS (\(type == .tapDisabledByTimeout ? "timeout" : "user input")), re-enabling"
+      // os_log, never print(): a write to an undrained stdout pipe could block this thread,
+      // and while it's blocked every keystroke in the system waits.
+      // Key events were missed while disabled (maybe the V key-up), so forget any half-seen
+      // ⌘V: otherwise the hold timer could open the panel unasked and keep swallowing V.
+      machine.reset()
+      if let holdTimer { CFRunLoopTimerInvalidate(holdTimer) }
+      if type == .tapDisabledByTimeout, fuse.trip(at: ProcessInfo.processInfo.systemUptime) {
+        gaveUp.store(true, ordering: .relaxed)
+        log.fault("key tap kept timing out; leaving it off so system input stays responsive")
+        return pass
+      }
+      log.error(
+        "key tap disabled by macOS (\(type == .tapDisabledByTimeout ? "timeout" : "user input", privacy: .public)), re-enabling"
       )
       if let port { CGEvent.tapEnable(tap: port, enable: true) }
       return pass
@@ -164,7 +184,7 @@ enum KeyTap {
     switch effect {
     case .none: break
     case .startTimer: startHoldTimer()
-    case .pasteNative: postCmdV()
+    case .pasteNative: afterCallback { postCmdV() }  // never post while macOS waits on us
     case .openPanel: Task { @MainActor in onHold() }
     }
     return swallow
@@ -203,11 +223,52 @@ enum KeyTap {
 
   /// Thread-safe: posting events needs no particular thread.
   static func postCmdV() {
+    let source = pasteSource()
     for down in [true, false] {
-      let e = CGEvent(keyboardEventSource: nil, virtualKey: vKeyCode, keyDown: down)
-      e?.flags = .maskCommand
+      let e = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: down)
+      e?.flags = [.maskCommand, leftCommandBit]  // some apps check which Command key
       e?.setIntegerValueField(.eventSourceUserData, value: marker)
-      e?.post(tap: .cghidEventTap)
+      e?.post(tap: .cgSessionEventTap)  // session level, like an app would; not as hardware
     }
+  }
+
+  /// Device-dependent "left Command" flag (NX_DEVICELCMDKEYMASK).
+  static let leftCommandBit = CGEventFlags(rawValue: 0x8)
+
+  /// A fresh, private event source for our synthetic paste. A default source reports a 0.25 s
+  /// suppression interval with nothing permitted (Apple's header says local events aren't
+  /// suppressed by default, so it's unclear which wins); set it explicitly so a paste can never
+  /// swallow your typing or clicks. Private state: it never mixes in the keys you hold.
+  static func pasteSource() -> CGEventSource? {
+    let source = CGEventSource(stateID: .privateState)
+    source?.localEventsSuppressionInterval = 0
+    source?.setLocalEventsFilterDuringSuppressionState(
+      [.permitLocalMouseEvents, .permitLocalKeyboardEvents, .permitSystemDefinedEvents],
+      state: .eventSuppressionStateSuppressionInterval)
+    source?.setLocalEventsFilterDuringSuppressionState(
+      [.permitLocalMouseEvents, .permitLocalKeyboardEvents, .permitSystemDefinedEvents],
+      state: .eventSuppressionStateRemoteMouseDrag)
+    return source
+  }
+
+  /// Runs `work` on the tap thread right after the current callback has returned.
+  private static func afterCallback(_ work: @escaping @Sendable () -> Void) {
+    let current = CFRunLoopGetCurrent()
+    CFRunLoopPerformBlock(current, CFRunLoopMode.commonModes.rawValue, work)
+    CFRunLoopWakeUp(current)
+  }
+}
+
+/// Safety fuse: if macOS times the tap out `limit` times within `window` seconds, something keeps
+/// it from answering, so Kopumi stops re-enabling it rather than stalling input again and again.
+struct TapFuse {
+  var limit = 3
+  var window: TimeInterval = 60
+  private var hits: [TimeInterval] = []
+
+  /// Records a timeout; true when the tap should stay off.
+  mutating func trip(at t: TimeInterval) -> Bool {
+    hits = hits.filter { t - $0 < window } + [t]
+    return hits.count >= limit
   }
 }
