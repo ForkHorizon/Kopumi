@@ -152,6 +152,7 @@ Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
   MainActor.assumeIsolated { refreshStatusIcon() }
 }
 Windows.installEditMenu()
+Windows.applyAppearance()
 
 let embedder = Embedder()
 let enricher = Enricher(store: store, embedder: embedder)
