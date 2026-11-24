@@ -4,12 +4,9 @@ import CoreImage.CIFilterBuiltins
 import CryptoKit
 import Foundation
 
-private struct Envelope: Codable {
-  var seq: Int64?
+/// A pulled record; the relay also sends seq/ts/dev, which only it needs.
+private struct Envelope: Decodable {
   let id: String
-  let ts: Int64
-  // periphery:ignore - read by the relay for last-writer-wins, not by this app
-  let dev: String
   let data: String
 }
 
@@ -125,13 +122,14 @@ final class Sync: ObservableObject {
     while true {
       let batch = try store.pendingSync(limit: 200)
       if batch.isEmpty { return pushed }
-      let envelopes = try batch.map { r in
-        Envelope(
-          id: r.id, ts: r.updatedAt, dev: r.deviceId,
-          data: try a.seal(try JSONEncoder().encode(r), id: r.id))
+      let envelopes: [[String: Any]] = try batch.map { r in
+        [
+          "id": r.id, "ts": r.updatedAt, "dev": r.deviceId,
+          "data": try a.seal(try JSONEncoder().encode(r), id: r.id),
+        ]
       }
       var req = request(a, "/records", method: "POST")
-      req.httpBody = try JSONEncoder().encode(["records": envelopes])
+      req.httpBody = try JSONSerialization.data(withJSONObject: ["records": envelopes])
       let _: [String: Int64] = try await call(req)
       try store.markSynced(batch)
       pushed += batch.count
