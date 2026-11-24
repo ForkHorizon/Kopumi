@@ -8,6 +8,64 @@ final class KopumiPanel: NSPanel {
   override var canBecomeKey: Bool { true }
 }
 
+/// Drag handle on the panel's bottom edge, right edge or bottom-right corner: a borderless
+/// window's own resize zone is too thin to grab. The top-left corner stays put.
+final class ResizeGrip: NSView {
+  private let position: NSCursor.FrameResizePosition
+
+  init(_ position: NSCursor.FrameResizePosition, frame: NSRect, mask: NSView.AutoresizingMask) {
+    self.position = position
+    super.init(frame: frame)
+    autoresizingMask = mask
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  /// `content` filling a container, with grips laid over its edges.
+  static func wrap(_ content: NSView) -> NSView {
+    let size = NSSize(width: 720, height: 400)
+    let box = NSView(frame: NSRect(origin: .zero, size: size))
+    content.frame = box.bounds
+    content.autoresizingMask = [.width, .height]
+    box.addSubview(content)
+    let t: CGFloat = 8
+    box.addSubview(
+      ResizeGrip(
+        .bottom, frame: NSRect(x: 0, y: 0, width: size.width, height: t),
+        mask: [.width, .maxYMargin]))
+    box.addSubview(
+      ResizeGrip(
+        .right, frame: NSRect(x: size.width - t, y: 0, width: t, height: size.height),
+        mask: [.height, .minXMargin]))
+    box.addSubview(
+      ResizeGrip(
+        .bottomRight, frame: NSRect(x: size.width - 2 * t, y: 0, width: 2 * t, height: 2 * t),
+        mask: [.minXMargin, .maxYMargin]))
+    return box
+  }
+
+  override var mouseDownCanMoveWindow: Bool { false }
+  /// Claims the drag; without it the panel background would move the window instead.
+  override func mouseDown(with event: NSEvent) {}
+
+  override func resetCursorRects() {
+    addCursorRect(bounds, cursor: .frameResize(position: position, directions: .all))
+  }
+
+  override func mouseDragged(with e: NSEvent) {
+    guard let w = window else { return }
+    var f = w.frame
+    let min = w.contentMinSize
+    if position != .bottom { f.size.width = max(min.width, f.width + e.deltaX) }
+    if position != .right {
+      let h = max(min.height, f.height + e.deltaY)  // deltaY > 0 means the mouse moved down
+      f.origin.y += f.height - h
+      f.size.height = h
+    }
+    w.setFrame(f, display: true)
+  }
+}
+
 @MainActor
 final class PanelController {
   let model: PanelModel
@@ -17,8 +75,8 @@ final class PanelController {
   init(store: Store, embedder: Embedder) {
     model = PanelModel(store: store, embedder: embedder)
     panel = KopumiPanel(
-      contentRect: NSRect(x: 0, y: 0, width: 760, height: 480),
-      styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+      contentRect: NSRect(x: 0, y: 0, width: 720, height: 400),
+      styleMask: [.borderless, .nonactivatingPanel, .resizable], backing: .buffered, defer: true)
     panel.level = .floating
     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     panel.hidesOnDeactivate = false
@@ -27,7 +85,11 @@ final class PanelController {
     panel.backgroundColor = .clear
     panel.isOpaque = false
     panel.hasShadow = true
-    panel.contentView = NSHostingView(rootView: PanelView(model: model))
+    let host = NSHostingView(rootView: PanelView(model: model))
+    host.sizingOptions = []  // the panel owns its size; SwiftUI content never grows it
+    panel.contentView = ResizeGrip.wrap(host)
+    panel.contentMinSize = NSSize(width: 560, height: 300)
+    panel.setFrameAutosaveName("KopumiPanel")  // drag any edge to resize; the size is remembered
     model.close = { [weak self] in self?.hide() }
     NotificationCenter.default.addObserver(
       forName: NSWindow.didResignKeyNotification, object: panel, queue: .main
@@ -40,7 +102,7 @@ final class PanelController {
     guard monitor == nil else { return }
     model.target = NSWorkspace.shared.frontmostApplication
     model.reset()
-    panel.setFrameOrigin(origin())
+    panel.setFrame(placement(), display: false)
     panel.makeKeyAndOrderFront(nil)
     monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
       let code = e.keyCode
@@ -67,6 +129,7 @@ final class PanelController {
     case 48: model.toggleActions()  // ⇥
     case 36, 76: model.enter(forcePlain: flags.contains(.option))  // ↩ / enter
     case 53: if !model.back() { hide() }  // esc
+    case 43 where flags.contains(.command): model.openSettings()  // ⌘,
     default:
       guard flags.contains(.command), let n = Int(chars), (1...9).contains(n) else { return false }
       model.paste(n - 1)
@@ -75,20 +138,22 @@ final class PanelController {
   }
 
   /// Below the text caret if the app exposes it, else at the mouse; kept on screen.
-  private func origin() -> NSPoint {
+  private func placement() -> NSRect {
     // AX rects are top-left based; Cocoa is bottom-left.
     let anchor =
       caretRect().map { r in
         NSPoint(x: r.minX, y: (NSScreen.screens.first?.frame.height ?? 0) - r.maxY)
       } ?? NSEvent.mouseLocation
     let screen = NSScreen.screens.first { $0.frame.contains(anchor) } ?? NSScreen.main
-    guard let vf = screen?.visibleFrame else { return anchor }
-    let size = panel.frame.size
+    guard let vf = screen?.visibleFrame.insetBy(dx: 8, dy: 8) else { return panel.frame }
+    // Never bigger than the screen, so every edge stays reachable for resizing.
+    let size = NSSize(
+      width: min(panel.frame.width, vf.width), height: min(panel.frame.height, vf.height))
     var o = NSPoint(x: anchor.x, y: anchor.y - size.height - 6)
     if o.y < vf.minY { o.y = anchor.y + 28 }  // no room below → above the caret
     o.x = min(max(o.x, vf.minX), vf.maxX - size.width)
     o.y = min(max(o.y, vf.minY), vf.maxY - size.height)
-    return o
+    return NSRect(origin: o, size: size)
   }
 
   private func caretRect() -> CGRect? {

@@ -40,8 +40,10 @@ func snapshotPanel(to dir: String) throws {
   model.move(1)
   try render(PanelView(model: model), "\(dir)/panel-actions-light.png", .aqua)
   try render(PanelView(model: model), "\(dir)/panel-actions-dark.png", .darkAqua)
-  try render(SettingsView(), "\(dir)/settings-light.png", .aqua)
-  try render(SettingsView(), "\(dir)/settings-dark.png", .darkAqua)
+  // Full height for the image; in the app the window is smaller and the form scrolls.
+  let settings = SettingsView().frame(width: 520).fixedSize(horizontal: false, vertical: true)
+  try render(settings, "\(dir)/settings-light.png", .aqua)
+  try render(settings, "\(dir)/settings-dark.png", .darkAqua)
   try render(OnboardingView(), "\(dir)/onboarding-light.png", .aqua)
   if let i = model.actions.firstIndex(where: { $0.id == "cloud.summarize" }) {
     model.runAction(i)  // first use of a cloud action → asks before sending

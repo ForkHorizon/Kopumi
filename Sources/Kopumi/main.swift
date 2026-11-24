@@ -157,7 +157,10 @@ final class MenuController: NSObject, NSMenuDelegate {
   }
 
   @objc func clearHistory() { try? store.clearHistory() }
-  @objc func openSettings() { Windows.show("settings", title: "Kopumi Settings", SettingsView()) }
+  @objc func openSettings() {
+    Windows.show(
+      "settings", title: "Kopumi Settings", size: NSSize(width: 520, height: 640), SettingsView())
+  }
   @objc func pauseHour() { setPause(Date().addingTimeInterval(3600)) }
   @objc func pauseIndefinitely() { setPause(.distantFuture) }
   @objc func resume() { setPause(nil) }
@@ -204,6 +207,10 @@ Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in
 }
 enricher.kick()  // backfill anything not enriched yet
 KeyTap.onHold = { panelController.show() }
+panelController.model.openSettings = {
+  panelController.hide()
+  menuController.openSettings()
+}
 KeyTap.onDoubleCopy = { watcher.appendLatest() }
 
 // History works without the tap; the Cmd+V panel, pasting and double Cmd+C need it.
@@ -216,5 +223,15 @@ if !KeyTap.start() {
   }
 }
 
+/// Opening Kopumi again (Finder, Spotlight) shows Settings, for when the menu-bar icon is hidden.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+    menuController.openSettings()
+    return false
+  }
+}
+let appDelegate = AppDelegate()
+NSApplication.shared.delegate = appDelegate
 NSApplication.shared.setActivationPolicy(.accessory)  // no Dock icon
 NSApplication.shared.run()

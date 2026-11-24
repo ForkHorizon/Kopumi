@@ -12,7 +12,7 @@ final class SyncForm: ObservableObject {
 
 struct SyncSection: View {
   @ObservedObject var sync: Sync
-  @AppStorage("syncRelay") private var relay = ""
+  @AppStorage("syncRelay") private var relay = "https://kopumi.forkhorizon.com"
   @StateObject private var form = SyncForm()
 
   var body: some View {
@@ -27,7 +27,10 @@ struct SyncSection: View {
       TextField("Relay", text: $relay, prompt: Text("https://relay.example.com"))
       HStack {
         Button("Turn On Sync") {
-          guard let url = URL(string: relay.trimmingCharacters(in: .whitespaces)),
+          let address = relay.trimmingCharacters(in: .whitespaces)
+          guard
+            let url = URL(
+              string: address.hasSuffix("/") ? String(address.dropLast()) : address),
             url.scheme == "https" || url.host == "localhost"
           else {
             form.error = "Enter your relay's https:// address."
@@ -42,7 +45,10 @@ struct SyncSection: View {
       HStack {
         Button("Join") {
           guard let a = SyncAccount(link: form.link) else {
-            form.error = "That isn't a Kopumi pairing link."
+            form.error =
+              form.link.hasPrefix("http")
+              ? "That's a relay address: put it in Relay above and click Turn On Sync."
+              : "That isn't a Kopumi pairing link. Copy one from a device that already syncs."
             return
           }
           form.error = nil

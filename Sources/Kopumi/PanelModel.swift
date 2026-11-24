@@ -20,6 +20,7 @@ final class PanelModel: ObservableObject {
   @Published private(set) var consent: (action: ClipAction, prompt: String)?
   var target: NSRunningApplication?
   var close: () -> Void = {}
+  var openSettings: () -> Void = {}
   let store: Store
   let embedder: Embedder
   private var semanticTask: Task<Void, Never>?
