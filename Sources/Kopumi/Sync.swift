@@ -8,6 +8,7 @@ private struct Envelope: Codable {
   var seq: Int64?
   let id: String
   let ts: Int64
+  // periphery:ignore - read by the relay for last-writer-wins, not by this app
   let dev: String
   let data: String
 }
