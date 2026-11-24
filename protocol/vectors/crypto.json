@@ -1,0 +1,17 @@
+{
+  "accountKeyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "accountKeyB64url": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "encKeyHex": "ad9a9fd6d57a0647e0a291e4dab19eee7b0b976da5bf0109bafaab5423b09a71",
+  "authToken": "d395cb0439488d9af5de7f6da4667a41c40f13f33db6a2691abfb1bedddbf69d",
+  "authTokenSha256": "9e6846a0d02997a1cbe655b8d082cf10c3ed37ef04236909987b1b054254fff7",
+  "record": {
+    "id": "01936c2e-7b1a-7c00-8000-000000000001",
+    "plaintext": "{\"v\":1,\"id\":\"01936c2e-7b1a-7c00-8000-000000000001\",\"createdAt\":1700000000000,\"updatedAt\":1700000000500,\"lastUsedAt\":1700000000500,\"deviceId\":\"01936c2e-0000-7000-8000-00000000000a\",\"kind\":\"url\",\"sourceApp\":\"com.apple.Safari\",\"text\":\"https://example.com/👋\",\"title\":null,\"meta\":\"{\\\"host\\\":\\\"example.com\\\"}\",\"contentHash\":\"text:e0f58468e04a361c70bdad9542f853d32973ed4dfbac27919309093ccaf9fd85\",\"pinned\":false,\"derivedFrom\":null,\"deleted\":false}",
+    "sealed": "AAECAwQFBgcICQoLtvqgu0psYpP6S1W3tdJaO769MVXldW8L7qk09bS7KLkIa0N7qc7/osPiYLoN5pmyPffbtWHW1oNvaM6nfI/aIbDMP7csyVIt9DoPDINM4cRdpJYumlkZ1uQSMLPs1qJA0eBso5XuXlld/MBw3O6AMLUZrQz1bHb80eoWmvQAtkysww6ygYRYU2RbknVDicn96kiB1bd2IbishohL0P+NVrrL8jIGHJB1qiTRTjhteeCeH98FT1M/gBvjrVERKwQtL2gvg0Xn9YlA0kiFGKzNXizku18TVzq3AeZWONWUFsi0y0XaE9qyeP/gcTC/5Lf9OjT9L3qDbtUYHssoRsAmscoG4lcYWZy+JNgVQssuHTtKRSSWhiqExfOwQbvH8mMr90F1x9XhCmnsQ3Pe4cwvwiyI7To6QK+jbOZnA97r6BnoZlN9RBHK6K6mZhOQBYOwlqsCOg1oBrVILrRE605pENn/ftrGnGhMvmbVTIMeFkYzlv1S9jCfcRo2gmB9VKPGNy7l68FBQlk7bUP9g4Gf9ZsGldxTzs2gKkzdGQd0J0QDm3Inz4dZcLFcQzjrftSyUvE1C2BJBNCyYQBmpcvRmhsgRzRMa+J+ueTO"
+  },
+  "pairing": {
+    "link": "kopumi://pair?r=https%3A%2F%2Frelay.example.com&a=1b4e28ba-2fa1-41d2-883f-0016d3cca427&k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "relay": "https://relay.example.com",
+    "accountId": "1b4e28ba-2fa1-41d2-883f-0016d3cca427"
+  }
+}

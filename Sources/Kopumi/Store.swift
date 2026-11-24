@@ -95,7 +95,12 @@ final class Store {
     END;
     CREATE TABLE embeddings(clipId TEXT PRIMARY KEY, model TEXT NOT NULL, vec BLOB NOT NULL);
     CREATE INDEX embeddings_model ON embeddings(model);
+    """,
+    // v2: sync — dirty = changed locally since last push; kv = sync cursor etc.
     """
+    ALTER TABLE clips ADD COLUMN dirty INTEGER NOT NULL DEFAULT 1;
+    CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    """,
   ]
 
   init(path: String, deviceId: String) throws {
@@ -142,7 +147,7 @@ final class Store {
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(contentHash) DO UPDATE SET
           lastUsedAt=excluded.lastUsedAt, updatedAt=excluded.updatedAt,
-          sourceApp=excluded.sourceApp, expiresAt=excluded.expiresAt
+          sourceApp=excluded.sourceApp, expiresAt=excluded.expiresAt, dirty=1
         RETURNING id
         """,
         [
@@ -226,7 +231,7 @@ final class Store {
   }
 
   func touch(id: String, now: Int64 = nowMs()) throws {
-    try run("UPDATE clips SET lastUsedAt=?, updatedAt=? WHERE id=?", [now, now, id])
+    try run("UPDATE clips SET lastUsedAt=?, updatedAt=?, dirty=1 WHERE id=?", [now, now, id])
   }
 
   // MARK: - Enrichment
@@ -248,8 +253,12 @@ final class Store {
     now: Int64 = nowMs()
   ) throws {
     try run(
-      "UPDATE clips SET title=coalesce(?, title), ocr=?, enrichedAt=? WHERE id=? AND deleted=0",
-      [title, ocr, now, id])
+      """
+      UPDATE clips SET title=coalesce(?1, title), ocr=?2, enrichedAt=?3,
+        updatedAt=CASE WHEN ?1 IS NULL THEN updatedAt ELSE ?3 END,
+        dirty=CASE WHEN ?1 IS NULL THEN dirty ELSE 1 END
+      WHERE id=?4 AND deleted=0
+      """, [title, ocr, now, id])
     if let e = embedding {
       try run(
         """
@@ -281,21 +290,23 @@ final class Store {
   }
 
   /// Hard-deletes expired secrets (they never sync) and tombstones clips beyond `maxItems`.
+  /// Retention is per device, so these tombstones stay local (a phone keeping 500 clips must not
+  /// delete a Mac's 5000).
   func prune(maxItems: Int, now: Int64 = nowMs()) throws {
     try run("DELETE FROM clips WHERE sensitive=1 AND expiresAt < ?", [now])
     try tombstone(
       where: """
         id IN (SELECT id FROM clips WHERE deleted=0 AND pinned=0 ORDER BY lastUsedAt DESC LIMIT -1 OFFSET ?)
-        """, [maxItems], now: now)
+        """, [maxItems], now: now, sync: false)
   }
 
   // ponytail: tombstones pile up forever; purge old ones once sync defines "everyone has seen it".
-  private func tombstone(where cond: String, _ args: [Any?], now: Int64) throws {
+  func tombstone(where cond: String, _ args: [Any?], now: Int64, sync: Bool = true) throws {
     try run(
       """
       UPDATE clips SET deleted=1, text=NULL, title=NULL, meta=NULL, ocr=NULL,
-        contentHash='deleted:' || id, updatedAt=? WHERE \(cond)
-      """, [now] + args)
+        contentHash='deleted:' || id, updatedAt=?, dirty=? WHERE \(cond)
+      """, [now, sync] + args)
     try run("DELETE FROM blobs WHERE clipId NOT IN (SELECT id FROM clips WHERE deleted=0)")
     try run("DELETE FROM embeddings WHERE clipId NOT IN (SELECT id FROM clips WHERE deleted=0)")
   }
@@ -313,7 +324,7 @@ final class Store {
       lastUsedAt: sqlite3_column_int64(st, 6))
   }
 
-  private func text(_ st: OpaquePointer, _ i: Int32) -> String? {
+  func text(_ st: OpaquePointer, _ i: Int32) -> String? {
     sqlite3_column_text(st, i).map { String(cString: $0) }
   }
 
@@ -332,8 +343,7 @@ final class Store {
     }
   }
 
-  private func run(_ sql: String, _ args: [Any?] = [], row: ((OpaquePointer) -> Void)? = nil) throws
-  {
+  func run(_ sql: String, _ args: [Any?] = [], row: ((OpaquePointer) -> Void)? = nil) throws {
     var st: OpaquePointer?
     guard sqlite3_prepare_v2(db, sql, -1, &st, nil) == SQLITE_OK, let st else { throw error() }
     defer { sqlite3_finalize(st) }

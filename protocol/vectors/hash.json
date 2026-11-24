@@ -1,0 +1,27 @@
+[
+  {
+    "prefix": "text",
+    "text": "hello",
+    "hash": "text:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+  },
+  {
+    "prefix": "text",
+    "text": "",
+    "hash": "text:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "prefix": "text",
+    "text": "line one\r\nline two\n",
+    "hash": "text:af28611c8dd7cdaa70b328947a47e7236543cff6aee512d92f80132b7f8db82f"
+  },
+  {
+    "prefix": "text",
+    "text": "emoji 👋🏽 and ü (precomposed)",
+    "hash": "text:93789880123252c42237b7c5745082f71a74b4ddbf887be69fa5c843939ce335"
+  },
+  {
+    "prefix": "text",
+    "text": "ü (decomposed, must NOT be normalized)",
+    "hash": "text:4664ccd85a697d6592d54b3946188e2f5ece16296c180893201e69b6b79c7c5d"
+  }
+]

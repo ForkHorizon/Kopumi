@@ -154,7 +154,7 @@ The step at the end of `run.sh` that adds files stays the same. Add `-Xswiftc` /
 4. **M4 – Cloud actions**: CLI engine, confirmation, progress/cancel, settings for the command template.
 5. **M5 – Polish**: Settings window, start at login, onboarding, double Cmd+C, pause, icons.
 6. **M6 – Ship**: Developer ID signing + notarization (Accessibility permission stops resetting), DMG.
-7. **Later – Sync (iOS/Android)**: design decision then (own relay vs. CloudKit + separate Android transport). It must be E2E encrypted (per-account key, devices paired by QR, server sees only ciphertext). The schema above already supports it (UUIDs, deviceId, updatedAt, tombstones).
+7. **Later – Sync (iOS/Android)** — now planned in [PLAN-ANDROID.md](PLAN-ANDROID.md): design decision then (own relay vs. CloudKit + separate Android transport). It must be E2E encrypted (per-account key, devices paired by QR, server sees only ciphertext). The schema above already supports it (UUIDs, deviceId, updatedAt, tombstones).
 
 ## 6. Risks / open points
 - **Secure input** (password fields) blocks the tap → Kopumi does nothing there. That's acceptable.

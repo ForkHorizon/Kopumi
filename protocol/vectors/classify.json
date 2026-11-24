@@ -1,0 +1,52 @@
+{
+  "kinds": [
+    {
+      "text": "https://example.com/a?b=1",
+      "kind": "url"
+    },
+    {
+      "text": "me@example.com",
+      "kind": "email"
+    },
+    {
+      "text": "#ff8800",
+      "kind": "color"
+    },
+    {
+      "text": "rgb(10, 20, 30)",
+      "kind": "color"
+    },
+    {
+      "text": "{\"a\": [1, 2]}",
+      "kind": "json"
+    },
+    {
+      "text": "[not json",
+      "kind": "text"
+    },
+    {
+      "text": "func foo() {\n    return 1\n}",
+      "kind": "code"
+    },
+    {
+      "text": "name\tage\nbob\t3",
+      "kind": "table"
+    },
+    {
+      "text": "Hello there, how are you doing today?",
+      "kind": "text"
+    }
+  ],
+  "sensitive": [
+    "sk-ant-api03-abcdefghijklmnopqrstuvwxyz",
+    "AKIAIOSFODNN7EXAMPLE",
+    "4111 1111 1111 1111",
+    "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "-----BEGIN OPENSSH PRIVATE KEY-----"
+  ],
+  "notSensitive": [
+    "hello world",
+    "4111 1111 1111 1112",
+    "call me at 415 555 0132"
+  ]
+}

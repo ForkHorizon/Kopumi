@@ -149,6 +149,7 @@ struct SettingsView: View {
         note("Password managers are always ignored.")
       }
       cloudSection
+      if let sync = Sync.shared { SyncSection(sync: sync) }
     }
     .formStyle(.grouped)
     .frame(width: 520)
