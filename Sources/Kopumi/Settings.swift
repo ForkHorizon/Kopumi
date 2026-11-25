@@ -7,20 +7,44 @@ import SwiftUI
 enum Windows {
   private static var open: [String: NSWindow] = [:]
 
-  static func show(_ id: String, title: String, chromeless: Bool = false, _ view: some View) {
+  /// `size` makes the window resizable and opens it at that content size, shrunk to fit the
+  /// screen (the view scrolls); without it the window fits the view exactly.
+  static func show(
+    _ id: String, title: String, chromeless: Bool = false, size: NSSize? = nil, _ view: some View
+  ) {
     let window =
       open[id]
       ?? {
-        let w = NSWindow(contentViewController: NSHostingController(rootView: view))
+        let host = NSHostingController(rootView: view)
+        if size != nil { host.sizingOptions = [] }  // the window owns its size; the view scrolls
+        let w = NSWindow(contentViewController: host)
         w.title = title
         w.styleMask =
-          chromeless ? [.titled, .closable, .fullSizeContentView] : [.titled, .closable]
+          chromeless
+          ? [.titled, .closable, .fullSizeContentView]
+          : size == nil ? [.titled, .closable] : [.titled, .closable, .resizable]
         w.titlebarAppearsTransparent = chromeless
         w.isReleasedWhenClosed = false
-        w.center()
+        if let size, let screen = NSScreen.main?.visibleFrame {
+          w.contentMinSize = NSSize(width: 480, height: 300)
+          w.setContentSize(
+            NSSize(
+              width: min(size.width, screen.width), height: min(size.height, screen.height - 60)))
+        }
+        w.collectionBehavior = [.moveToActiveSpace]  // come to the Space you're on, don't jump away
         open[id] = w
         return w
       }()
+    // Closed windows reopen centered on the display that has the mouse.
+    let mouse = NSEvent.mouseLocation
+    if !window.isVisible,
+      let vf = (NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main)?.visibleFrame
+    {
+      var f = window.frame
+      f.size.height = min(f.height, vf.height)
+      f.origin = NSPoint(x: vf.midX - f.width / 2, y: vf.midY - f.height / 2)
+      window.setFrame(f, display: false)
+    }
     NSApp.activate()
     window.makeKeyAndOrderFront(nil)
   }
@@ -149,10 +173,10 @@ struct SettingsView: View {
         note("Password managers are always ignored.")
       }
       cloudSection
+      if let sync = Sync.shared { SyncSection(sync: sync) }
     }
     .formStyle(.grouped)
-    .frame(width: 520)
-    .fixedSize(horizontal: false, vertical: true)
+    .frame(minWidth: 480, maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
   }
 
   private var cloudSection: some View {

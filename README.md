@@ -22,4 +22,18 @@ SKIP_NOTARIZE=1 SIGN_ID=- ./release.sh 0.2     # dry run without an Apple accoun
 
 One-time setup (paid Apple Developer Program): a **Developer ID Application** certificate in your login keychain, and notarization credentials stored with `xcrun notarytool store-credentials kopumi-notary`. Details are in the header of `release.sh`.
 
-See [PLAN.md](PLAN.md) for the design and roadmap.
+## Sync and Android
+
+Clips sync end-to-end encrypted between the Mac and Android through a small relay you host. Devices only make outbound connections to it, so any mix of Wi-Fi and mobile data works. Wire format and shared test vectors: [protocol/](protocol/SYNC.md).
+
+- Relay server: [KopumiWeb](https://github.com/ForkHorizon/KopumiWeb)
+- Android app: [KopumiAndroind](https://github.com/ForkHorizon/KopumiAndroind) (keeps a copy of `protocol/`; copy it again when the format changes)
+
+On the Mac: Settings → Sync → enter the relay address → Turn On Sync, then scan the QR code from the Android app (Settings → Scan Pairing Code).
+
+```sh
+node protocol/gen-vectors.mjs                         # shared vectors, only when the format changes
+.build/debug/Kopumi --check-sync http://localhost:8787   # with a local relay running (KopumiWeb: npm start)
+```
+
+See [PLAN.md](PLAN.md) and [PLAN-ANDROID.md](PLAN-ANDROID.md) for the design and roadmap.

@@ -35,7 +35,7 @@ struct PanelView: View {
       hints
     }
     .padding(22)
-    .frame(width: 760, height: 480)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
     .foregroundStyle(Theme.ink)
     .background(Theme.surface, in: .rect(cornerRadius: 8))
     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.hairline))
@@ -52,6 +52,8 @@ struct PanelView: View {
           .font(.system(size: 17))
           .focused($searchFocused)
         Text("type:  app:  is:today").font(.system(size: 11)).foregroundStyle(Theme.muted)
+        Button(action: model.openSettings) { Image(systemName: "gearshape") }
+          .buttonStyle(.plain).foregroundStyle(Theme.muted).help("Settings (⌘,)")
       }
       Theme.hairline.frame(height: 1)
     }

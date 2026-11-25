@@ -15,6 +15,7 @@ func runChecks() throws {
   checkInputSafety()
   try checkStoreBasics()
   try checkStoreSearchAndEnrichment()
+  try checkSync()
   print("checks passed")
 }
 
